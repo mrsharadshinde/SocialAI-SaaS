@@ -1,0 +1,19 @@
+# Ignore Virtual Environment
+.venv/
+venv/
+env/
+
+# Ignore Secrets & Environment Variables
+.env
+
+# Ignore Database (Contains Real Keys!)
+*.db
+*.sqlite3
+social_ai.db
+
+# Ignore Python Cache (Junk files)
+__pycache__/
+*.pyc
+
+# Ignore OS files
+.DS_Store
