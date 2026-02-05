@@ -6,7 +6,9 @@ class UserProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
+    password_hash = Column(String)
 
+    session_token = Column(String, nullable=True)
     # Core Brain
     persona_prompt = Column(Text)
     content_tone = Column(String)
