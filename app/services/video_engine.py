@@ -9,9 +9,7 @@ from proglog import ProgressBarLogger
 
 load_dotenv()
 
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
-
+# ImageMagick Configuration for Windows vs Linux
 magick_path = os.getenv("IMAGEMAGICK_BINARY")
 if not magick_path and os.name == 'nt':
     common_paths = [
@@ -25,6 +23,10 @@ if not magick_path and os.name == 'nt':
 
 if magick_path and os.path.exists(magick_path):
     change_settings({"IMAGEMAGICK_BINARY": magick_path})
+
+# Fix for Pillow 10+
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
 
@@ -58,7 +60,6 @@ class VideoEngine:
         self.font_serif = "assets/fonts/bold_font.ttf"
         self.font_sans = "assets/fonts/Poppins-Bold.ttf"
 
-        # Styles adjusted for 720p resolution
         self.styles = [
             {"name": "Classic Serif", "font": self.font_serif, "color": 'white', "stroke_color": 'black', "stroke_width": 2, "fontsize": 50, "v_pos": 600},
             {"name": "Modern Yellow", "font": self.font_sans, "color": '#FFD700', "stroke_color": 'black', "stroke_width": 2, "fontsize": 48, "v_pos": 650},
@@ -89,6 +90,7 @@ class VideoEngine:
             if not data.get('videos'): return None
             
             video_data = random.choice(data['videos'])
+            # Prefer 720p
             best_video = next((v for v in video_data['video_files'] if v['height'] >= 720), video_data['video_files'][0])
             video_url = best_video['link']
             
@@ -114,11 +116,8 @@ class VideoEngine:
 
     def create_video(self, video_path, quote_text, style_name=None, progress_bar=None):
         try:
-            # 720p Config
             TARGET_W = 720
             TARGET_H = 1280
-            
-            # 👇 UPDATED DURATION HERE 👇
             target_duration = random.randint(7, 10) 
             
             if style_name:
@@ -128,11 +127,9 @@ class VideoEngine:
             
             clip = VideoFileClip(video_path)
             
-            # 1. Resize early to save RAM
             if clip.h > 1280:
                 clip = clip.resize(height=1280) 
 
-            # 2. Safe Loop
             if clip.duration < target_duration:
                 n_loops = int(target_duration / clip.duration) + 2
                 clip = clip.loop(n=n_loops)
@@ -140,7 +137,6 @@ class VideoEngine:
             else:
                 clip = clip.subclip(0, target_duration)
             
-            # 3. Crop to 720x1280
             if clip.w / clip.h > 9/16:
                  clip = clip.resize(height=TARGET_H)
                  clip = clip.crop(x1=clip.w/2 - (TARGET_W/2), y1=0, width=TARGET_W, height=TARGET_H)
@@ -148,7 +144,6 @@ class VideoEngine:
                  clip = clip.resize(width=TARGET_W)
                  clip = clip.crop(y1=clip.h/2 - (TARGET_H/2), x1=0, width=TARGET_W, height=TARGET_H)
 
-            # 4. Text
             wrapped_text = "\n".join(textwrap.wrap(quote_text, width=22))
             
             txt_clip = TextClip(

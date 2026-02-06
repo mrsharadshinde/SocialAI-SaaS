@@ -9,22 +9,21 @@ class UserProfile(Base):
     password_hash = Column(String)
 
     session_token = Column(String, nullable=True)
-    # Core Brain
-    persona_prompt = Column(Text)
-    content_tone = Column(String)
+    
+    # Core Brain (Defaults)
+    persona_prompt = Column(Text, default="You are a helpful creative assistant.")
+    content_tone = Column(String, default="Professional, Engaging")
     language = Column(String, default="English")
 
-    # Visuals
-    visual_style = Column(String)
+    # Visuals (Defaults)
+    visual_style = Column(String, default="Cinematic, Minimalist")
 
     # Secrets
-    gemini_api_key = Column(String)
-    groq_api_key = Column(String)      # <--- NEW: Store Groq Key
-    pexels_api_key = Column(String)
-    insta_username = Column(String)
-    insta_password = Column(String)
-
+    gemini_api_key = Column(String, nullable=True)
+    groq_api_key = Column(String, nullable=True)
+    pexels_api_key = Column(String, nullable=True)
+    
     # Preferences
-    ai_provider = Column(String, default="Groq") # <--- NEW: "Gemini" or "Groq"
+    ai_provider = Column(String, default="Groq")
 
     is_active = Column(Boolean, default=True)

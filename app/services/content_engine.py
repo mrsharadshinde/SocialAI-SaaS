@@ -14,7 +14,6 @@ class ContentEngine:
         print(f"🧠 Brain: Generating concept using {self.provider}...")
         
         # 1. GENERATE DYNAMIC TOPIC
-        # We use a simple randomized list for speed/reliability, or you can ask AI to generate it.
         topics = [
             "The dark side of success", "Why nice guys finish last", "The hypocrisy of society", 
             "Money vs Happiness", "Modern dating struggles", "The lie of hard work", 
@@ -24,13 +23,16 @@ class ContentEngine:
         ]
         selected_topic = random.choice(topics)
         
+        # 2. SELECT LANGUAGE
+        # If the input language is "English", we might still randomize for variety
+        # or stick to the user's preference. For now, let's mix it up as requested previously.
         selected_lang = random.choice(["English", "Hindi", "Marathi"])
         print(f"🌍 Language: {selected_lang} | Topic: {selected_topic}")
 
-        # 2. THE PROMPT
+        # 3. THE PROMPT
         prompt = f""" 
-        You are an AI agent with this persona: "{persona}".
-        Your tone is: "{tone}"
+        You are an AI agent with this specific persona: "{persona}".
+        Your content tone is: "{tone}"
         
         TASK:
         Generate 1 Instagram Reel idea about: "{selected_topic}".
@@ -40,6 +42,7 @@ class ContentEngine:
         - If {selected_lang} is Hindi/Marathi, use Devanagari script.
         - Keep the quote short (max 10-15 words).
         - The Caption should be in English but can use Hinglish words.
+        - Ensure NO spelling mistakes.
 
         STRICTLY OUTPUT JSON format like this:
         {{
@@ -50,16 +53,16 @@ class ContentEngine:
         }}
         """
 
-        # 3. ROUTING LOGIC
+        # 4. ROUTING LOGIC
         if self.provider == "Groq":
             return self._generate_with_groq(prompt, selected_lang)
         else:
             return self._generate_with_gemini(prompt, selected_lang)
 
-    # --- ENGINE 1: GROQ (Fastest / Recommended) ---
+    # --- ENGINE 1: GROQ ---
     def _generate_with_groq(self, prompt, lang):
         if not self.groq_key:
-            return None, "Missing Groq API Key. Update your profile."
+            return None, "Missing Groq API Key."
         
         try:
             client = Groq(api_key=self.groq_key)
@@ -80,18 +83,16 @@ class ContentEngine:
         except Exception as e:
             return None, f"Groq Error: {str(e)}"
 
-    # --- ENGINE 2: GEMINI (Fallback) ---
+    # --- ENGINE 2: GEMINI ---
     def _generate_with_gemini(self, prompt, lang):
         if not self.gemini_key:
-            return None, "Missing Gemini API Key. Update your profile."
+            return None, "Missing Gemini API Key."
             
         genai.configure(api_key=self.gemini_key)
         
-        # Updated Model List (Using stable version names to avoid 404s)
         models_queue = [
             "gemini-2.0-flash",
-            "gemini-1.5-flash-latest", # Tries the latest alias
-            "gemini-1.5-flash",        # Standard
+            "gemini-1.5-flash",
             "gemini-pro"
         ]
 
@@ -99,7 +100,6 @@ class ContentEngine:
 
         for model_name in models_queue:
             try:
-                print(f"🔄 Gemini: Attempting {model_name}...")
                 model = genai.GenerativeModel(model_name)
                 response = model.generate_content(
                     prompt, 
@@ -109,13 +109,11 @@ class ContentEngine:
                 clean_text = response.text.replace('```json', '').replace('```', '').strip()
                 data = json.loads(clean_text)
                 data['language'] = lang
-                print(f"✅ Success with {model_name}!")
                 return data, None
 
             except Exception as e:
-                print(f"⚠️ {model_name} Failed: {e}")
                 last_error = str(e)
                 time.sleep(1)
                 continue
         
-        return None, f"All Gemini models failed. Try switching to Groq in dashboard. Error: {last_error}"
+        return None, f"Gemini Error: {last_error}"

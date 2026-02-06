@@ -17,9 +17,34 @@ from app import database, models, crud
 # Initialize DB
 models.Base.metadata.create_all(bind=database.engine)
 
+# --- PAGE CONFIG & CUSTOM STYLING ---
 st.set_page_config(page_title="ReelFactory AI", page_icon="🎬", layout="wide")
 
-# --- AUTH HELPER FUNCTIONS ---
+# Custom CSS for Professional Look
+st.markdown("""
+<style>
+    .stApp { background-color: #0E1117; }
+    h1, h2, h3 { font-family: 'Inter', sans-serif; font-weight: 600; }
+    .stButton>button { border-radius: 8px; font-weight: bold; transition: all 0.3s; }
+    .stButton>button:hover { transform: scale(1.02); }
+    .stTextInput>div>div>input { border-radius: 8px; }
+    div[data-testid="stMetricValue"] { font-size: 1.5rem; }
+</style>
+""", unsafe_allow_html=True)
+
+# --- LOAD SYSTEM KEYS (Your "Free Tier" Keys) ---
+# ⚠️ MAKE SURE THESE ARE IN YOUR .env FILE
+SYSTEM_GROQ = os.getenv("GROQ_API_KEY")
+SYSTEM_GEMINI = os.getenv("GEMINI_API_KEY")
+SYSTEM_PEXELS = os.getenv("PEXELS_API_KEY")
+
+# --- SESSION STATE SETUP ---
+if 'guest_usage' not in st.session_state:
+    st.session_state['guest_usage'] = 0
+if 'page_view' not in st.session_state:
+    st.session_state['page_view'] = 'studio'
+
+# --- AUTH HELPERS ---
 def update_session_token(user_id, token):
     db = database.SessionLocal()
     user = db.query(models.UserProfile).filter(models.UserProfile.id == user_id).first()
@@ -31,249 +56,299 @@ def update_session_token(user_id, token):
 def check_auto_login():
     params = st.query_params
     token = params.get("auth", None)
-    
     if token and 'user_id' not in st.session_state:
         db = database.SessionLocal()
         user = db.query(models.UserProfile).filter(models.UserProfile.session_token == token).first()
         db.close()
-        
         if user:
             st.session_state['user_id'] = user.id
             st.session_state['username'] = user.username
-            st.success("🔄 Auto-logged in!")
+            st.toast(f"Welcome back, {user.username}!", icon="👋")
             time.sleep(0.5)
             st.rerun()
 
-# --- PAGES ---
-def login_page():
-    st.title("🔐 Login to ReelFactory")
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        if st.button("Login", use_container_width=True):
-            db = database.SessionLocal()
-            user = crud.get_user_by_username(db, username)
-            db.close()
-            
-            if user and user.password_hash == password:
-                st.session_state['user_id'] = user.id
-                st.session_state['username'] = user.username
-                new_token = str(uuid.uuid4())
-                update_session_token(user.id, new_token)
-                st.query_params["auth"] = new_token
-                st.success(f"Welcome back, {username}!")
-                st.rerun()
-            else:
-                st.error("Invalid username or password")
+def logout():
+    st.query_params.clear() 
+    if 'user_id' in st.session_state:
+        update_session_token(st.session_state['user_id'], None)
+        del st.session_state['user_id']
+        del st.session_state['username']
+    st.session_state['page_view'] = 'studio'
+    st.rerun()
 
-def register_page():
-    st.title("🆕 Create Account")
-    with st.form("register_form"):
-        username = st.text_input("Choose Username")
-        password = st.text_input("Choose Password", type="password")
-        st.markdown("---")
-        tone = st.text_input("Content Tone", value="Sarcastic, Logical, Maverick")
-        visual = st.text_input("Visual Style", value="Dark, Rain, Nature, Aesthetic")
-        persona = st.text_area("Persona Prompt", value="You are a 23yo digital creator...")
-        st.markdown("### 🔑 API Keys")
-        groq_key = st.text_input("Groq API Key (Recommended)", type="password")
-        gemini_key = st.text_input("Gemini API Key", type="password")
-        pexels_key = st.text_input("Pexels API Key", type="password")
-        
-        if st.form_submit_button("Create Account"):
-            if not username or not password:
-                st.error("Username and Password are required!")
-                return
-            db = database.SessionLocal()
-            if crud.get_user_by_username(db, username):
-                st.error("Username taken!")
-            else:
-                crud.create_user(db, username, password, persona, tone, visual, gemini_key, groq_key, pexels_key, provider="Groq")
-                st.success("Account Created! Please Login.")
-            db.close()
+# --- VIEWS ---
 
-def main_app():
-    with st.sidebar:
-        st.write(f"👤 **{st.session_state['username']}**")
-        if st.button("Logout"):
-            st.query_params.clear() 
-            update_session_token(st.session_state['user_id'], None)
-            del st.session_state['user_id']
-            del st.session_state['username']
+def login_view():
+    col_c = st.columns([1,1,1])[1]
+    with col_c:
+        st.subheader("🔐 Access Your Studio")
+        with st.container(border=True):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            if st.button("Login", use_container_width=True, type="primary"):
+                db = database.SessionLocal()
+                user = crud.get_user_by_username(db, username)
+                db.close()
+                if user and user.password_hash == password:
+                    st.session_state['user_id'] = user.id
+                    st.session_state['username'] = user.username
+                    new_token = str(uuid.uuid4())
+                    update_session_token(user.id, new_token)
+                    st.query_params["auth"] = new_token
+                    st.session_state['page_view'] = 'studio'
+                    st.rerun()
+                else:
+                    st.error("Invalid credentials")
+        if st.button("⬅️ Go Back", use_container_width=True):
+            st.session_state['page_view'] = 'studio'
             st.rerun()
-    
-    st.title("🎬 ReelFactory Studio")
-    db = database.SessionLocal()
-    current_user = db.query(models.UserProfile).filter(models.UserProfile.id == st.session_state['user_id']).first()
-    
-    tab_gen, tab_settings = st.tabs(["⚡ Generation Studio", "⚙️ Settings & Keys"])
 
-    # --- TAB 1: GENERATION STUDIO ---
-    with tab_gen:
-        if not current_user:
-            st.error("User not found.")
-            return
-
-        # 1. INPUT AREA (SPLIT INTO TABS)
-        mode_ai, mode_manual = st.tabs(["🤖 AI Brainstorm", "✍️ Write Your Own"])
-
-        # --- A. AI MODE ---
-        with mode_ai:
-            col_sw, col_btn = st.columns([1, 3])
-            with col_sw:
-                is_groq = (current_user.ai_provider == "Groq")
-                active_provider = st.radio("Active Brain", ["Groq", "Gemini"], index=0 if is_groq else 1, horizontal=True)
-
-            with col_btn:
-                st.write("") 
-                st.write("") 
-                if st.button("🧠 Generate Idea", use_container_width=True):
-                     prog_bar = st.progress(0, text="🧠 Brainstorming...")
-                     from app.services.content_engine import ContentEngine
-                     engine = ContentEngine(gemini_key=current_user.gemini_api_key, groq_key=current_user.groq_api_key, provider=active_provider)
-                     
-                     prog_bar.progress(50, text="✨ Thinking...")
-                     idea, error = engine.generate_idea(current_user.persona_prompt, current_user.content_tone)
-                     
-                     prog_bar.progress(100, text="✅ Done!")
-                     time.sleep(0.5)
-                     prog_bar.empty()
-
-                     if idea:
-                        st.session_state['current_idea'] = idea
-                        # Reset render state
-                        for key in ['bg_video_path', 'current_style', 'final_video']:
-                            if key in st.session_state: del st.session_state[key]
-                        st.rerun()
-                     else:
-                        st.error(f"Error: {error}")
-
-        # --- B. MANUAL MODE (NEW FEATURE) ---
-        with mode_manual:
-            with st.form("manual_idea_form"):
-                st.caption("Have an idea? Write it yourself and let the engine render it.")
-                
-                # Manual Inputs
-                custom_quote = st.text_area("Your Quote / Text", height=100, placeholder="e.g., Money returns, time doesn't.")
-                custom_visual = st.text_input("Background Visual Search", placeholder="e.g., Time lapse clock, busy city, sunset")
-                
-                if st.form_submit_button("🚀 Set Custom Idea"):
-                    if not custom_quote or not custom_visual:
-                        st.error("Please enter both the Quote and a Visual Search term.")
+def register_view():
+    col_c = st.columns([1,2,1])[1]
+    with col_c:
+        st.subheader("🚀 Join ReelFactory")
+        with st.container(border=True):
+            username = st.text_input("Choose Username")
+            password = st.text_input("Choose Password", type="password")
+            st.markdown("---")
+            c1, c2 = st.columns(2)
+            with c1: tone = st.text_input("Default Tone", value="Sarcastic")
+            with c2: visual = st.text_input("Default Visual", value="Dark Cinematic")
+            persona = st.text_area("Default Persona", value="You are a digital creator...", height=100)
+            
+            if st.button("Create Account", use_container_width=True, type="primary"):
+                if not username or not password:
+                    st.error("Fields required!")
+                else:
+                    db = database.SessionLocal()
+                    if crud.get_user_by_username(db, username):
+                        st.error("Username taken!")
                     else:
-                        # We manually construct the 'idea' object just like the AI would
-                        manual_idea = {
-                            "quote": custom_quote,
-                            "visual_search_term": custom_visual,
-                            "language": "Manual",
-                            "caption": "Custom Post",
-                            "hashtags": ""
-                        }
-                        
-                        st.session_state['current_idea'] = manual_idea
-                        
-                        # Reset render state so we don't show old videos
-                        for key in ['bg_video_path', 'current_style', 'final_video']:
-                            if key in st.session_state: del st.session_state[key]
-                            
-                        st.success("Idea Set! Scroll down to render.")
+                        crud.create_user(db, username, password, persona, tone, visual, "", "", "", provider="Groq")
+                        st.toast("Account Created! Please Login.", icon="✅")
+                        st.session_state['page_view'] = 'login'
                         time.sleep(1)
                         st.rerun()
+                    db.close()
+        if st.button("⬅️ Go Back", use_container_width=True):
+            st.session_state['page_view'] = 'studio'
+            st.rerun()
 
-        # 2. RENDER STUDIO (Works for BOTH AI and Manual)
-        if 'current_idea' in st.session_state:
-            idea = st.session_state['current_idea']
-            st.markdown("---")
-            c1, c2 = st.columns([2,1])
-            with c1: st.info(f"**Quote:** {idea['quote']}")
-            with c2: st.info(f"**Visual:** {idea['visual_search_term']}")
-
-            st.subheader("🎬 Controls")
-            col_r, col_s, col_sty = st.columns(3)
+def profile_settings_view(current_user):
+    st.subheader(f"⚙️ Settings: {current_user.username}")
+    with st.container(border=True):
+        st.info("💡 Add your own API keys here to remove limits and speed up generation.")
+        with st.form("settings_form"):
+            c1, c2 = st.columns(2)
+            with c1:
+                new_groq = st.text_input("Groq API Key", type="password", placeholder="Paste key here...")
+            with c2:
+                new_pexels = st.text_input("Pexels API Key", type="password", placeholder="Paste key here...")
             
-            render = col_r.button("▶️ Render", use_container_width=True)
-            swap = col_s.button("🔄 Swap BG", use_container_width=True)
-            style = col_sty.button("🎨 Style", use_container_width=True)
+            st.markdown("---")
+            new_persona = st.text_area("My Persona", value=current_user.persona_prompt)
+            
+            if st.form_submit_button("💾 Save Profile", type="primary"):
+                db = database.SessionLocal()
+                crud.update_user(db, current_user.id, new_persona, current_user.content_tone, current_user.visual_style, 
+                               current_user.gemini_api_key, new_groq, new_pexels, current_user.ai_provider)
+                db.close()
+                st.toast("Settings Saved!", icon="💾")
+                time.sleep(1)
+                st.session_state['page_view'] = 'studio'
+                st.rerun()
+    if st.button("⬅️ Back to Studio"):
+        st.session_state['page_view'] = 'studio'
+        st.rerun()
 
-            if render or swap or style:
-                if not current_user.pexels_api_key:
-                    st.error("⚠️ Missing Pexels API Key!")
+def studio_view():
+    # --- NAVBAR ---
+    c1, c2 = st.columns([6, 2])
+    with c1:
+        st.title("🎬 ReelFactory Studio")
+    with c2:
+        if 'user_id' in st.session_state:
+            st.write(f"👤 **{st.session_state['username']}**")
+            cols = st.columns(2)
+            if cols[0].button("⚙️"): st.session_state['page_view'] = 'profile'; st.rerun()
+            if cols[1].button("Log Out"): logout()
+        else:
+            cols = st.columns(2)
+            if cols[0].button("Login"): st.session_state['page_view'] = 'login'; st.rerun()
+            if cols[1].button("Sign Up", type="primary"): st.session_state['page_view'] = 'register'; st.rerun()
+
+    # --- USER DATA & GUEST LOGIC ---
+    db = database.SessionLocal()
+    current_user = None
+    if 'user_id' in st.session_state:
+        current_user = db.query(models.UserProfile).filter(models.UserProfile.id == st.session_state['user_id']).first()
+    db.close()
+
+    # DEFAULTS
+    d_tone, d_vis, d_per = "Sarcastic", "Dark Nature", "You are a creative assistant."
+    if current_user:
+        d_tone = current_user.content_tone or d_tone
+        d_vis = current_user.visual_style or d_vis
+        d_per = current_user.persona_prompt or d_per
+
+    # GUEST BANNER
+    if not current_user:
+        rem = 3 - st.session_state['guest_usage']
+        if rem > 0:
+            st.markdown(f"""
+            <div style="background-color: #1e3a8a; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;">
+                <span style="color: white; font-weight: bold;">👋 Guest Mode Active</span>
+                <span style="background-color: #3b82f6; padding: 5px 10px; border-radius: 5px; color: white;">{rem} Free Credits Left</span>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.error("🚫 Guest credits exhausted. Please Sign Up (it's free!) to continue.")
+
+    # --- MAIN STUDIO UI ---
+    tab_ai, tab_manual = st.tabs(["✨ AI Generator", "✍️ Manual Mode"])
+
+    with tab_ai:
+        with st.container(border=True):
+            c_in1, c_in2 = st.columns([1, 2])
+            with c_in1:
+                st.markdown("#### 🎨 Style")
+                i_tone = st.text_input("Content Tone", value=d_tone)
+                i_vis = st.text_input("Visual Style", value=d_vis)
+                provider = st.selectbox("AI Model", ["Groq", "Gemini"])
+            with c_in2:
+                st.markdown("#### 🧠 Persona")
+                i_per = st.text_area("Instructions", value=d_per, height=145)
+
+            if st.button("✨ Generate Idea", use_container_width=True, type="primary"):
+                # LIMIT CHECK
+                if not current_user and st.session_state['guest_usage'] >= 3:
+                    st.error("Please Login to continue.")
                 else:
-                    prog_bar = st.progress(0, text="🚀 Starting Engine...")
+                    # KEY SELECTION LOGIC
+                    active_groq = current_user.groq_api_key if current_user and current_user.groq_api_key else SYSTEM_GROQ
+                    active_gemini = current_user.gemini_api_key if current_user and current_user.gemini_api_key else SYSTEM_GEMINI
+                    
+                    # Validate Keys
+                    valid_key = False
+                    if provider == "Groq" and active_groq: valid_key = True
+                    if provider == "Gemini" and active_gemini: valid_key = True
+
+                    if not valid_key:
+                        st.error(f"⚠️ System Error: No API Key available for {provider}. Please check .env file.")
+                    else:
+                        if not current_user: st.session_state['guest_usage'] += 1
+                        
+                        prog = st.progress(0, text="🚀 Waking up AI...")
+                        from app.services.content_engine import ContentEngine
+                        eng = ContentEngine(gemini_key=active_gemini, groq_key=active_groq, provider=provider)
+                        
+                        prog.progress(40, text="🧠 Brainstorming...")
+                        idea, err = eng.generate_idea(i_per, i_tone)
+                        
+                        if idea:
+                            st.session_state['current_idea'] = idea
+                            # Clean slate for new render
+                            if 'final_video' in st.session_state: del st.session_state['final_video']
+                            prog.progress(100, text="Done!")
+                            time.sleep(0.5)
+                            prog.empty()
+                            st.rerun()
+                        else:
+                            st.error(f"Generation Failed: {err}")
+
+    with tab_manual:
+        with st.container(border=True):
+            m_quote = st.text_area("Your Quote")
+            m_vis = st.text_input("Background Search Term")
+            if st.button("🚀 Set Idea", use_container_width=True):
+                st.session_state['current_idea'] = {
+                     "quote": m_quote,
+                     "visual_search_term": m_vis,
+                     "language": "Manual", "caption": "", "hashtags": ""
+                 }
+                st.rerun()
+
+    # --- PREVIEW & RENDER SECTION ---
+    if 'current_idea' in st.session_state:
+        st.markdown("### 🎬 Production")
+        idea = st.session_state['current_idea']
+        
+        with st.container(border=True):
+            c_info1, c_info2 = st.columns([3, 1])
+            with c_info1: st.info(f"**Quote:** \"{idea['quote']}\"")
+            with c_info2: st.caption(f"**Visual:** {idea['visual_search_term']}")
+
+            cols = st.columns(3)
+            do_render = cols[0].button("▶️ Render Video", use_container_width=True, type="primary")
+            do_swap = cols[1].button("🔄 Swap Background", use_container_width=True)
+            do_style = cols[2].button("🎨 Change Font", use_container_width=True)
+
+            if do_render or do_swap or do_style:
+                # PEXELS KEY LOGIC
+                active_pexels = current_user.pexels_api_key if current_user and current_user.pexels_api_key else SYSTEM_PEXELS
+                
+                if not active_pexels:
+                    st.error("⚠️ System Error: Pexels API Key missing.")
+                else:
+                    bar = st.progress(0, text="Initializing...")
                     from app.services.video_engine import VideoEngine
-                    video_eng = VideoEngine(current_user.pexels_api_key)
+                    v_eng = VideoEngine(active_pexels)
                     
                     # 1. Background
-                    if swap or 'bg_video_path' not in st.session_state:
-                        bg = video_eng.get_stock_video(idea['visual_search_term'], progress_bar=prog_bar)
+                    if do_swap or 'bg_video_path' not in st.session_state:
+                        bg = v_eng.get_stock_video(idea['visual_search_term'], progress_bar=bar)
                         if bg: st.session_state['bg_video_path'] = bg
                         else: st.error("No video found.")
                     else:
-                        prog_bar.progress(40, text="✅ Using Cached Background")
+                        bar.progress(30, text="Using Cached Background")
 
                     # 2. Style
-                    styles = video_eng.get_style_names()
-                    if style and 'current_style' in st.session_state:
-                        idx = styles.index(st.session_state['current_style'])
-                        st.session_state['current_style'] = styles[(idx + 1) % len(styles)]
-                    elif 'current_style' not in st.session_state:
-                        st.session_state['current_style'] = styles[0]
-                    
+                    styles = v_eng.get_style_names()
+                    curr = st.session_state.get('current_style', styles[0])
+                    if do_style:
+                        idx = styles.index(curr)
+                        curr = styles[(idx + 1) % len(styles)]
+                    st.session_state['current_style'] = curr
+
                     # 3. Render
                     if 'bg_video_path' in st.session_state:
-                        s_name = st.session_state['current_style']
-                        path = video_eng.create_video(
+                        path = v_eng.create_video(
                             st.session_state['bg_video_path'], 
                             idea['quote'], 
-                            style_name=s_name,
-                            progress_bar=prog_bar
+                            style_name=curr,
+                            progress_bar=bar
                         )
-                        st.session_state['final_video'] = path
-                        prog_bar.progress(100, text="✅ Done!")
-                        time.sleep(1)
-                        prog_bar.empty()
+                        if path:
+                            st.session_state['final_video'] = path
+                            bar.empty()
+                            st.toast("Render Complete!", icon="✅")
+                        else:
+                            st.error("Render Failed (Memory/Error)")
 
-            if 'final_video' in st.session_state:
-                st.success(f"✅ Rendered Style: {st.session_state.get('current_style', 'Default')}")
-                st.markdown("---")
-                col_left, col_center, col_right = st.columns([3, 4, 3])
-                with col_center:
-                    st.caption("Preview:")
-                    st.video(st.session_state['final_video'])
-
-    # --- TAB 2: SETTINGS ---
-    with tab_settings:
-        st.subheader("🔐 API Keys & Persona")
-        with st.form("settings_form"):
-            col_a, col_b = st.columns(2)
-            with col_a:
-                g_status = "✅ Saved" if current_user.groq_api_key else "❌ Missing"
-                st.caption(f"Groq Key ({g_status})")
-                new_groq = st.text_input("Update Groq Key", type="password", placeholder="Leave empty to keep")
-                gem_status = "✅ Saved" if current_user.gemini_api_key else "❌ Missing"
-                st.caption(f"Gemini Key ({gem_status})")
-                new_gemini = st.text_input("Update Gemini Key", type="password", placeholder="Leave empty to keep")
-            with col_b:
-                pex_status = "✅ Saved" if current_user.pexels_api_key else "❌ Missing"
-                st.caption(f"Pexels Key ({pex_status})")
-                new_pexels = st.text_input("Update Pexels Key", type="password", placeholder="Leave empty to keep")
+        # FINAL VIDEO DISPLAY
+        if st.session_state.get('final_video'):
             st.markdown("---")
-            new_persona = st.text_area("Persona", value=current_user.persona_prompt)
-            new_tone = st.text_input("Tone", value=current_user.content_tone)
-            new_visual = st.text_input("Visual Style", value=current_user.visual_style)
-            if st.form_submit_button("💾 Save Settings"):
-                crud.update_user(db, current_user.id, new_persona, new_tone, new_visual, new_gemini, new_groq, new_pexels, current_user.ai_provider)
-                st.success("Settings Updated!")
-                st.rerun()
-    db.close()
+            col_v = st.columns([1,1,1])[1]
+            with col_v:
+                st.caption("Final Result:")
+                try:
+                    with open(st.session_state['final_video'], 'rb') as f:
+                        vb = f.read()
+                        st.video(vb)
+                        st.download_button("⬇️ Download Reel", vb, "reel.mp4", "video/mp4", use_container_width=True)
+                except:
+                    st.warning("Video file expired. Please render again.")
 
-# --- APP START ---
+# --- ROUTER ---
 check_auto_login()
 
-if 'user_id' not in st.session_state:
-    tab1, tab2 = st.tabs(["Login", "Register"])
-    with tab1: login_page()
-    with tab2: register_page()
+if st.session_state['page_view'] == 'login': login_view()
+elif st.session_state['page_view'] == 'register': register_view()
+elif st.session_state['page_view'] == 'profile':
+    db = database.SessionLocal()
+    u = db.query(models.UserProfile).filter(models.UserProfile.id == st.session_state['user_id']).first()
+    db.close()
+    if u: profile_settings_view(u)
+    else: studio_view()
 else:
-    main_app()
+    studio_view()
